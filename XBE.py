@@ -2,29 +2,36 @@ import struct
 import string
 from PIL import Image
 
+
 class XBE:
     m_file = None
 
-    def __init__(self, file):
-        self.m_file = open(file, 'rb').read()
+    def __init__(self, xbe_file):
+        self.m_file = open(xbe_file, 'rb').read()
 
         # Load XBE Header
         self.header = XBE_HEADER(self.m_file)
-        self.cert   = XBE_CERT(self.m_file[self.header.dwCertificateAddr - self.header.dwBaseAddr:len(self.m_file)])
+        self.cert = XBE_CERT(self.m_file[self.header.dwCertificateAddr - self.header.dwBaseAddr:len(self.m_file)])
 
         # Load XBE Section Headers
         self.sections = []
         for x in range(0, self.header.dwSections):
-            self.sections.append(XBE_SECTION(self.m_file[self.header.dwSectionHeadersAddr - self.header.dwBaseAddr + (x * 56):len(self.m_file)], self.m_file))
+            self.sections.append(
+                XBE_SECTION(
+                    self.m_file[self.header.dwSectionHeadersAddr - self.header.dwBaseAddr + (x * 56):len(self.m_file)],
+                    self.m_file
+                )
+            )
 
         # Load XBE Section Names
         for section in self.sections:
             section.name = struct.unpack('8s', self.m_file[section.dwSectionNameAddr - self.header.dwBaseAddr:
-                                                           section.dwSectionNameAddr - self.header.dwBaseAddr + 8])[0].split("\x00")[0].rstrip()
-
+                                                           section.dwSectionNameAddr - self.header.dwBaseAddr + 8]
+                                         )[0].split("\x00")[0].rstrip()
 
     def get_logo(self):
-        return 0
+        # TODO: Implement
+        raise Exception('Not implemented.')
 
     def image_png(self):
         for section in self.sections:
@@ -32,26 +39,26 @@ class XBE:
                 data = section.data
                 type = struct.unpack('4s', data[0:4])[0]
 
-                newFile = open('C:\\Users\\Dustin\\Desktop\\XPR0.bin', "wb")
+                new_file = open('XPR0.bin', "wb")
                 # write to file
-                newFile.write(data)
-                newFile.close()
+                new_file.write(data)
+                new_file.close()
 
                 if type == 'XPR0':
-                    dwTotalSize  = struct.unpack('I', data[4:8])[0]
+                    dwTotalSize = struct.unpack('I', data[4:8])[0]
                     dwHeaderSize = struct.unpack('I', data[8:12])[0]
 
                     format_type = ord(data[25:26])
 
-                    dwWidth  = 128
+                    dwWidth = 128
                     dwHeight = 128
 
                     # 6  RGBA8 0x06
                     if format_type == 0x06:
-                        temp_data  = self.unswizzle(dwWidth, dwHeight, 4, dwHeaderSize, data)
+                        temp_data = self.unswizzle(dwWidth, dwHeight, 4, dwHeaderSize, data)
                         image_data = [0] * dwWidth * dwHeight * 3
 
-                        dwWidth  = 128
+                        dwWidth = 128
                         dwHeight = 128
 
                         for J in xrange(dwHeaderSize, len(data) - 1, 4):
@@ -72,16 +79,17 @@ class XBE:
                         image_data = self.decode_texture(dwWidth, dwHeight, data[dwHeaderSize:], self.texture_dxt1)
                     # 14 DXT3 0x0E
                     elif format_type == 0x0E:
-                        raise Exception('Unimplemented format')
+                        raise Exception('Unimplemented format.')
                     # 15 DXT5 0x0F
                     elif format_type == 0x0F:
                         image_data = self.decode_texture(dwWidth, dwHeight, data[dwHeaderSize:], self.texture_dxt5)
                     else:
-                        raise Exception('Unknown format')
+                        raise Exception('Unknown format.')
+
                 elif type == 'DDS\x20':
-                    dwSize   = struct.unpack('I', data[4:8])[0]   # Must be set to 124
+                    dwSize = struct.unpack('I', data[4:8])[0]   # Must be set to 124
                     dwHeight = struct.unpack('I', data[12:16])[0]
-                    dwWidth  = struct.unpack('I', data[16:20])[0]
+                    dwWidth = struct.unpack('I', data[16:20])[0]
 
                     if dwSize != 124:
                         raise Exception('Invalid DDS dwSize != 124')
@@ -89,14 +97,15 @@ class XBE:
                     data = data[128:]
                     image_data = self.decode_texture(dwWidth, dwHeight, data, self.texture_dxt1)
                 else:
-                    raise 'Unknown XTIMAG format'
+                    raise Exception('Unknown XTIMAG format.')
 
                 if len(image_data):
                     image = Image.frombytes('RGB', (dwWidth, dwHeight), image_data)
-                    image.save('C:\\Users\\Dustin\\Desktop\\image.bmp')
-        print 'done';
+                    image.save('image.bmp')
 
-    def unswizzle(self, width, height, depth, o, source):
+    @staticmethod
+    def unswizzle(width, height, depth, o, source):
+
         dest = [' '] * len(source)
 
         for y in xrange(0, height - 1):
@@ -105,14 +114,14 @@ class XBE:
                 for bit in xrange(0, 15):
                     sy = sy or ((y >> bit) and 1) << (2 * bit)
 
-                sy = sy << 1
+                sy <<= 1
             else:
                 y_mask = y % width
                 for bit in xrange(0, 15):
                     sy = sy or ((y_mask >> bit) and 1) << (2 * bit)
 
-                sy = sy << 1
-                sy = sy + (y / width) * width * width
+                sy <<= 1
+                sy += (y / width) * width * width
 
             d = y * width * depth
 
@@ -126,49 +135,51 @@ class XBE:
                     for bit in xrange(0, 15):
                         sx = sx or ((x_mask >> bit) and 1) << (2 * bit)
 
-                    sx = sx + (x / (2 * height)) * 2 * height * height
+                    sx += (x / (2 * height)) * 2 * height * height
 
-                pSource = (sx + sy) * depth
+                p_source = (sx + sy) * depth
 
                 for i in xrange(0, depth - 1):
-                    dest[d + i] = source[pSource + i + o:pSource + i + o + 1]
-                    #print(d + i)
+                    dest[d + i] = source[p_source + i + o:p_source + i + o + 1]
+
         return string.join(dest, '')
 
-    def decode_texture(self, dwWidth, dwHeight, image, function):
+    @staticmethod
+    def decode_texture(width, height, image, function):
         data = []
-        linesize = (dwWidth + 3) / 4 * 8  # Number of data byte per row
+        line_size = (width + 3) / 4 * 8  # Number of data byte per row
 
-        baseoffset = 0
-        for yb in xrange(0, (dwHeight + 3) / 4):
-            linedata = image[baseoffset:(baseoffset + linesize)]
+        base_offset = 0
+        for yb in xrange(0, (height + 3) / 4):
+            linedata = image[base_offset:(base_offset + line_size)]
             decoded = function(linedata)  # returns 4-tuple of RGB lines
-            baseoffset += linesize
+            base_offset += line_size
             for d in decoded:
                 # Make sure that if we have a texture size that's not a
                 # multiple of 4 that we correctly truncate the returned data
-                data.append(d[:(dwWidth * 3)])
+                data.append(d[:(width * 3)])
 
-        return string.join(data[:dwHeight], '')
+        return string.join(data[:height], '')
 
-    def texture_dxt5(self, data):
+    @staticmethod
+    def texture_dxt5(data):
         # input: one "row" of data (i.e. will produce 4*width pixels)
         blocks = len(data) / 16  # number of blocks in row
         out = ['', '', '', '']  # row accumulators
-        a = [0 for i in xrange(8)]
+        a = [0] * 8
 
         for xb in xrange(blocks):
             # Decode next 8-byte block.
-            a[0],a[1],tab1,tab2, c0, c1, bits = struct.unpack('<BBHIHHI', data[xb*16:(xb+1)*16])
+            a[0], a[1], tab1, tab2, c0, c1, bits = struct.unpack('<BBHIHHI', data[xb*16:(xb+1)*16])
 
             atab = (tab2<<16) | tab1
 
             if a[0] > a[1]:
-                for i in xrange(2,8):
-                    a[i] = ((8-i)*a[0] + (i-1)*a[1])/7
+                for i in xrange(2, 8):
+                    a[i] = ((8 - i) * a[0] + (i - 1) * a[1]) / 7
             else:
-                for i in xrange(2,6):
-                    a[i] = ((6-i)*a[0] + (i-1)*a[1])/5
+                for i in xrange(2, 6):
+                    a[i] = ((6 - i) * a[0] + (i - 1) * a[1]) / 5
                 a[6] = 0
                 a[7] = 0xff
 
@@ -184,7 +195,7 @@ class XBE:
             g1 = ((c1 >> 5) & 0x3f) << 2
             r1 = ((c1 >> 11) & 0x1f) << 3
 
-            r0,b0,g0,r1,b1,g1 = ((int(v*1.2) if v*1.2 < 256 else 0xff) for v in (r0,b0,g0,r1,b1,g1))
+            r0, b0, g0, r1, b1, g1 = ((int(v*1.2) if v*1.2 < 256 else 0xff) for v in (r0,b0,g0,r1,b1,g1))
 
             # Decode this block into 4x4 pixels
             # Accumulate the results onto our 4 row accumulators
@@ -215,7 +226,8 @@ class XBE:
         # All done.
         return tuple(out)
 
-    def texture_dxt1(self, data):
+    @staticmethod
+    def texture_dxt1(data):
         # input: one "row" of data (i.e. will produce 4*width pixels)
         blocks = len(data) / 8  # number of blocks in row
         out = ['', '', '', '']  # row accumulators
@@ -282,6 +294,7 @@ class XBE:
             failed = True
 
         return failed
+
 
 class XBE_HEADER():
     def __init__(self, data):
@@ -403,15 +416,15 @@ class XBE_SECTION(XBE):
         self.bzSectionDigest            = struct.unpack('20B', data[36:56])   # Section digest
 
         # Section Data
-        self.data  = data_file[self.dwRawAddr:self.dwRawAddr + self.dwSizeofRaw]
+        self.data = data_file[self.dwRawAddr:self.dwRawAddr + self.dwSizeofRaw]
         self.data += '\x00' * (self.dwVirtualSize - len(self.data))
 
 
 class XBE_LIB(XBE):
     def __init__(self):
-        print('wtf')
+        raise Exception('Not implemented.')
 
 
 class XBE_TLS(XBE):
     def __init__(self):
-        print('wtf')
+        raise Exception('Not implemented.')

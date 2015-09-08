@@ -7,4 +7,4 @@ XBEpy is library for viewing, extracting, and validating data inside the Microso
 
 ### Dependencies
 Python 2.7
-Python Imaging Library (PIL)
+Python Imaging Library (Pillow)
